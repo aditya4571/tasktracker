@@ -19,8 +19,6 @@
             --header-h: 70px;
             --side-w: 240px;
             --side-c: 70px;
-            --success: #10b981;
-            --danger: #ef4444;
         }
         [data-theme="light"] {
             --bg-body: #f1f5f9;
@@ -37,7 +35,7 @@
         .header { flex: 0 0 var(--header-h); background: var(--bg-card); border-bottom: 1px solid var(--border); display: flex; align-items: center; padding: 0 20px; z-index: 100; }
         .brand { font-weight: 800; font-size: 1.5rem; letter-spacing: -0.5px; background: linear-gradient(90deg, #818cf8, #c084fc); -webkit-background-clip: text; -webkit-text-fill-color: transparent; min-width: 200px; }
         .toggle-btn { background: none; border: none; color: var(--text-main); font-size: 1.5rem; cursor: pointer; margin-right: 20px; }
-        .sync-badge { font-size: 0.75rem; font-weight: 700; padding: 4px 10px; border-radius: 20px; background: rgba(16, 185, 129, 0.2); color: var(--success); display: flex; align-items: center; gap: 5px; }
+        .sync-badge { font-size: 0.75rem; font-weight: 700; padding: 4px 10px; border-radius: 20px; background: rgba(16, 185, 129, 0.2); color: #10b981; display: flex; align-items: center; gap: 5px; }
         .sync-badge.syncing { background: rgba(245, 158, 11, 0.2); color: #f59e0b; }
 
         /* Layout Wrapper */
@@ -70,7 +68,7 @@
         .timer-val { font-size: 2.2rem; font-weight: 800; font-family: monospace; text-align: center; margin-bottom: 10px; color: var(--text-main); }
 
         /* Grid */
-        .table-wrapper { background: var(--bg-card); border: 1px solid var(--border); border-radius: 16px; padding: 20px; overflow-x: auto; margin-bottom: 25px;}
+        .table-wrapper { background: var(--bg-card); border: 1px solid var(--border); border-radius: 16px; padding: 20px; overflow-x: auto; }
         .table-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px; }
         table { width: 100%; border-collapse: collapse; min-width: 900px; }
         th, td { border: 1px solid var(--border); text-align: center; padding: 8px 4px; font-size: 11px; font-weight: 600; }
@@ -85,15 +83,8 @@
         input[type="checkbox"] { width: 16px; height: 16px; accent-color: var(--primary); cursor: pointer; }
         .task-row { display: flex; justify-content: space-between; align-items: center; padding: 8px 0; border-bottom: 1px solid var(--border); font-size: 0.85rem; }
 
-        /* History Ledger */
-        .history-item { 
-            display: grid; grid-template-columns: 2fr 1.5fr 1.5fr auto; gap: 10px;
-            padding: 10px 15px; background: rgba(255,255,255,0.02); border-radius: 8px; margin-bottom: 8px;
-            font-size: 11.5px; align-items: center; border: 1px solid var(--border);
-        }
-
         @media (max-width: 1200px) { .dashboard-grid { grid-template-columns: 1fr 1fr; } }
-        @media (max-width: 768px) { .dashboard-grid { grid-template-columns: 1fr; } .label-col { width: 120px; } .history-item { grid-template-columns: 1fr; gap: 5px; } }
+        @media (max-width: 768px) { .dashboard-grid { grid-template-columns: 1fr; } .label-col { width: 120px; } }
     </style>
 </head>
 <body>
@@ -143,12 +134,12 @@
                 </div>
                 
                 <div class="card">
-                    <div class="card-title">Active Tasks</div>
+                    <div class="card-title">Quick Tasks</div>
                     <div style="display:flex; gap:8px; margin-bottom: 10px;">
                         <input type="text" id="todoIn" class="input-dark" placeholder="New task...">
                         <button class="btn" onclick="addTodo()">+</button>
                     </div>
-                    <div id="todoArea" style="overflow-y: auto; max-height: 100px;"></div>
+                    <div id="todoArea" style="overflow-y: auto; max-height: 80px;"></div>
                 </div>
             </div>
 
@@ -168,11 +159,6 @@
                     <tbody id="tr-body"></tbody>
                 </table>
             </div>
-
-            <div>
-                <h5 style="margin-bottom: 15px; color: var(--text-muted); font-size: 0.8rem; text-transform: uppercase;">Completed Task History (Reference Ledger)</h5>
-                <div id="historyArea"></div>
-            </div>
         </div>
     </main>
 </div>
@@ -191,8 +177,7 @@
     let db = {
         habits: ["Wake up at 5 AM", "10 Min walk", "Read 20m"],
         todos: [],
-        history: [], // Added for preserving completed tasks
-        checks: {} 
+        checks: {} // Format: "month_day_habitIndex": true
     };
     
     let curMonth = new Date().getMonth();
@@ -204,9 +189,9 @@
             const response = await fetch(DB_URL);
             const serverData = await response.json();
             
+            // If server has valid data, replace default local data
             if(serverData && serverData.habits) {
                 db = serverData;
-                if(!db.history) db.history = []; // Ensure backward compatibility if history array is missing
             }
         } catch(e) {
             console.error("Error loading data from cloud. Using local defaults.", e);
@@ -226,7 +211,10 @@
             await fetch(DB_URL, {
                 method: "POST",
                 body: JSON.stringify(db),
-                headers: { "Content-Type": "text/plain;charset=utf-8" }
+                headers: {
+                    // text/plain prevents strict CORS preflight checks in Google Apps Script
+                    "Content-Type": "text/plain;charset=utf-8", 
+                }
             });
             badge.className = 'sync-badge';
             badge.innerHTML = '☁️ Synced';
@@ -243,7 +231,6 @@
         buildNav();
         render();
         renderTodos();
-        renderHistory();
     }
 
     function buildNav() {
@@ -299,13 +286,17 @@
 
     function saveCheck(day, hi, isChecked) {
         const key = `${curMonth}_${day}_${hi}`;
-        if(isChecked) db.checks[key] = true;
-        else delete db.checks[key]; 
+        if(isChecked) {
+            db.checks[key] = true;
+        } else {
+            delete db.checks[key]; // Keep database lightweight
+        }
         
         calcScores();
         if(day === todayNum && curMonth === new Date().getMonth()) renderFocus();
         else render();
         
+        // Push the new checkmark state to Google Sheets
         pushData(); 
     }
 
@@ -316,7 +307,9 @@
 
         for(let d=1; d<=days; d++) {
             let dailyScore = 0;
-            db.habits.forEach((_, hi) => { if(db.checks[`${curMonth}_${d}_${hi}`]) dailyScore++; });
+            db.habits.forEach((_, hi) => {
+                if(db.checks[`${curMonth}_${d}_${hi}`]) dailyScore++;
+            });
             document.getElementById(`score-${d}`).innerText = dailyScore;
             totalMonthScore += dailyScore;
         }
@@ -383,74 +376,30 @@
         document.getElementById('timer').innerText = `${m}:${s < 10 ? '0' : ''}${s}`;
     }
 
-    // --- 5. To-Do & Task Preservation ---
+    // --- 5. To-Do & Admin ---
     function addTodo() {
         const input = document.getElementById('todoIn');
         if(input.value.trim()) {
-            db.todos.push({ 
-                id: Date.now(), 
-                text: input.value, 
-                created: new Date().toLocaleString() 
-            });
+            db.todos.push({ id: Date.now(), text: input.value });
             input.value = '';
             renderTodos();
             pushData();
         }
     }
-
-    function completeTodo(id) {
-        const idx = db.todos.findIndex(t => t.id === id);
-        if(idx !== -1) {
-            const task = db.todos.splice(idx, 1)[0];
-            task.completed = new Date().toLocaleString();
-            
-            if(!db.history) db.history = [];
-            db.history.unshift(task); // Add to the top of the history list
-            
-            renderTodos();
-            renderHistory();
-            pushData();
-        }
+    function delTodo(id) {
+        db.todos = db.todos.filter(t => t.id !== id);
+        renderTodos();
+        pushData();
     }
-
     function renderTodos() {
-        if(db.todos.length === 0) {
-            document.getElementById('todoArea').innerHTML = `<div style="color:var(--text-muted); font-size:0.8rem; text-align:center; padding-top:10px;">No active tasks.</div>`;
-            return;
-        }
         document.getElementById('todoArea').innerHTML = db.todos.map(t => `
             <div class="task-row">
                 <span>${t.text}</span>
-                <button onclick="completeTodo(${t.id})" style="background:rgba(16, 185, 129, 0.2); border:1px solid var(--success); color:var(--success); padding:3px 10px; border-radius:6px; cursor:pointer; font-size:0.7rem; font-weight:800;">DONE</button>
+                <button onclick="delTodo(${t.id})" style="background:none; border:none; color:var(--text-muted); cursor:pointer;">✕</button>
             </div>
         `).join('');
     }
 
-    function renderHistory() {
-        const area = document.getElementById('historyArea');
-        if(!db.history || db.history.length === 0) {
-            area.innerHTML = '<div style="color:var(--text-muted); font-size:0.85rem; padding: 10px;">No completed tasks yet. Complete a task to see it preserved here.</div>';
-            return;
-        }
-        area.innerHTML = db.history.map((t, i) => `
-            <div class="history-item">
-                <span style="font-weight:700; color:var(--text-main);">${t.text}</span>
-                <span style="color:var(--text-muted);">Born: ${t.created || 'Unknown'}</span>
-                <span style="color:var(--success);">Done: ${t.completed}</span>
-                <button onclick="deleteHistory(${i})" style="background:none; border:none; color:var(--danger); cursor:pointer; font-weight:900; font-size:1rem;" title="Permanently Delete">✕</button>
-            </div>
-        `).join('');
-    }
-
-    function deleteHistory(index) {
-        if(confirm("Permanently delete this record from history?")) {
-            db.history.splice(index, 1);
-            renderHistory();
-            pushData();
-        }
-    }
-
-    // --- 6. Admin & Theme ---
     function adminAction(type, i = null) {
         if(prompt("Admin Password Required:") !== PW) return alert("Access Denied");
         if(type === 'add') {
@@ -468,7 +417,9 @@
         const root = document.documentElement;
         const mode = root.getAttribute('data-theme') === 'dark' ? 'light' : 'dark';
         root.setAttribute('data-theme', mode);
+        localStorage.setItem('ad_cloud_theme', mode);
     }
+    if(localStorage.getItem('ad_cloud_theme') === 'light') document.documentElement.setAttribute('data-theme', 'light');
 
     // Startup
     window.onload = loadData;
